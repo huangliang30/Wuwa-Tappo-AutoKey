@@ -6,12 +6,12 @@
 界面通过 100ms 轮询控制器快照刷新，避免跨线程直接操作控件。
 """
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QComboBox, QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
-    QLabel, QMainWindow, QMessageBox, QProgressBar, QPushButton, QScrollArea,
-    QSpinBox, QVBoxLayout, QWidget,
+    QComboBox, QFormLayout, QFrame, QGridLayout, QGraphicsDropShadowEffect,
+    QGroupBox, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QProgressBar,
+    QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from config_manager import ConfigManager
@@ -24,81 +24,109 @@ from key_controller import KeyController
 APP_TITLE = "Wuwa Tappo 自动按键"
 
 STATE_COLORS = {
-    TaskState.IDLE: "#8a93a6",
-    TaskState.RUNNING: "#4ade80",
-    TaskState.PAUSED: "#fbbf24",
-    TaskState.STOPPED: "#f87171",
-    TaskState.COMPLETED: "#38bdf8",
-    TaskState.ERROR: "#f87171",
+    TaskState.IDLE: "#ffffff",
+    TaskState.RUNNING: "#ccff00",
+    TaskState.PAUSED: "#ff9500",
+    TaskState.STOPPED: "#dddddd",
+    TaskState.COMPLETED: "#00d9ff",
+    TaskState.ERROR: "#ff006e",
+}
+
+STATE_TEXT = {
+    TaskState.IDLE: "#444444",
+    TaskState.RUNNING: "#006600",
+    TaskState.PAUSED: "#a05000",
+    TaskState.STOPPED: "#666666",
+    TaskState.COMPLETED: "#00779e",
+    TaskState.ERROR: "#c4004f",
 }
 
 STYLE = """
-* { font-family: "Microsoft YaHei UI"; font-size: 13px; color: #dbe2f0; }
-QMainWindow, QWidget#Root { background-color: #0f1420; }
-QLabel#Title { font-size: 21px; font-weight: 700; color: #ffffff; }
-QLabel#Subtitle { font-size: 12px; color: #7c869c; }
+* { font-family: "Consolas", "Microsoft YaHei UI", monospace;
+    font-size: 13px; color: #000000; }
+QMainWindow, QWidget#Root { background-color: #ffffff; }
+QLabel { background: transparent; }
+QLabel#Title { font-size: 22px; font-weight: 900; font-family: "Microsoft YaHei UI"; }
+QLabel#Subtitle { color: #444444; font-size: 12px; }
 QLabel[badge="true"] {
-    font-size: 13px; font-weight: 600; color: #ffffff;
-    border-radius: 12px; padding: 4px 16px;
+    font-size: 13px; font-weight: 900; color: #000000;
+    border: 3px solid #000000; border-radius: 0px;
+    padding: 4px 14px; background-color: #ffffff;
 }
-QLabel#StatValue { font-size: 15px; font-weight: 600; color: #ffffff; }
-QLabel#SentCounter { font-size: 26px; font-weight: 700; color: #4f8cff; }
-QLabel#TargetCounter { font-size: 26px; font-weight: 700; color: #aab4c8; }
+QLabel#StatValue { font-size: 15px; font-weight: 900; color: #000000; }
+QLabel#SentCounter { font-size: 26px; font-weight: 900; color: #ff006e; }
+QLabel#TargetCounter { font-size: 26px; font-weight: 900; color: #000000; }
 QGroupBox {
-    background-color: #171e2e; border: 1px solid #232c42;
-    border-radius: 12px; margin-top: 14px; padding: 10px 14px 14px 14px;
-    font-weight: 600;
+    background-color: #ffffff; border: 3px solid #000000;
+    border-radius: 0px; margin-top: 18px; padding: 14px 14px 14px 14px;
+    font-weight: 900;
 }
 QGroupBox::title {
     subcontrol-origin: margin; subcontrol-position: top left;
-    left: 12px; top: 1px; padding: 0 4px; color: #8fa3c8;
+    left: 10px; top: 3px; padding: 1px 8px; color: #000000;
+    background-color: #ccff00; border: 2px solid #000000;
+    font-weight: 900; font-family: "Microsoft YaHei UI";
 }
 QComboBox, QSpinBox {
-    background-color: #10182a; border: 1px solid #2a3550;
-    border-radius: 8px; padding: 6px 10px; min-height: 20px;
-    selection-background-color: #2b4a8f;
+    background-color: #ffffff; border: 3px solid #000000;
+    border-radius: 0px; padding: 5px 10px; min-height: 20px;
+    selection-background-color: #ffff00; selection-color: #000000;
+    font-family: "Consolas", "Microsoft YaHei UI";
 }
-QComboBox:hover, QSpinBox:hover { border-color: #3d4c72; }
-QComboBox:focus, QSpinBox:focus { border-color: #4f8cff; }
-QComboBox::drop-down { border: none; width: 26px; }
+QComboBox:hover, QSpinBox:hover { background-color: #ffff00; }
+QComboBox:focus, QSpinBox:focus { background-color: #ffff00; }
+QComboBox:disabled, QSpinBox:disabled { color: #888888; background-color: #f0f0f0; }
+QComboBox::drop-down {
+    border: none; width: 26px; background: #ffffff; border-left: 3px solid #000000;
+}
 QComboBox::down-arrow {
     image: none; border-left: 5px solid transparent;
-    border-right: 5px solid transparent; border-top: 6px solid #8fa3c8;
-    margin-right: 10px;
+    border-right: 5px solid transparent; border-top: 6px solid #000000;
+    margin-right: 8px;
 }
+QComboBox::drop-down:editable { background: #ffff00; }
 QComboBox QAbstractItemView {
-    background-color: #171e2e; border: 1px solid #2a3550;
-    selection-background-color: #24365e; outline: none;
+    background-color: #ffffff; border: 3px solid #000000;
+    selection-background-color: #ffff00; selection-color: #000000; outline: none;
 }
-QSpinBox::up-button, QSpinBox::down-button { width: 18px; background: #1d2740; }
+QSpinBox::up-button, QSpinBox::down-button {
+    width: 18px; background: #ffffff; border: none; border-left: 2px solid #000000;
+}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover { background: #ffff00; }
 QPushButton {
-    border: 1px solid #2a3550; border-radius: 9px; padding: 9px 16px;
-    background-color: #1c2438; font-weight: 600;
+    border: 3px solid #000000; border-radius: 0px;
+    padding: 9px 16px; background-color: #ffffff; color: #000000;
+    font-weight: 900; font-family: "Microsoft YaHei UI";
 }
-QPushButton:hover { background-color: #243050; }
-QPushButton:disabled { color: #5a6478; background-color: #161d2d; border-color: #202842; }
-QPushButton#StartBtn { background-color: #2563eb; border-color: #2563eb; color: white; }
-QPushButton#StartBtn:hover { background-color: #3b7bf5; }
-QPushButton#PauseBtn { background-color: #b45309; border-color: #b45309; color: white; }
-QPushButton#PauseBtn:hover { background-color: #cf6a10; }
-QPushButton#StopBtn  { background-color: #7f1d1d; border-color: #9f2b2b; color: white; }
-QPushButton#StopBtn:hover  { background-color: #a32c2c; }
-QPushButton#TestBtn  { background-color: #115e59; border-color: #115e59; color: white; }
-QPushButton#TestBtn:hover  { background-color: #17807a; }
+QPushButton:hover { background-color: #ffff00; color: #000000; }
+QPushButton:pressed {
+    padding-top: 15px; padding-left: 22px;
+    padding-bottom: 3px; padding-right: 10px;
+}
+QPushButton:disabled { color: #888888; background-color: #f0f0f0; }
+QPushButton#StartBtn { background-color: #ff006e; color: #ffffff; }
+QPushButton#StartBtn:hover { background-color: #ffff00; color: #000000; }
+QPushButton#PauseBtn { background-color: #ff9500; color: #000000; }
+QPushButton#StopBtn  { background-color: #000000; color: #ffffff; }
+QPushButton#StopBtn:hover  { background-color: #ffff00; color: #000000; }
+QPushButton#TestBtn  { background-color: #00d9ff; color: #000000; }
 QProgressBar {
-    background-color: #10182a; border: 1px solid #2a3550;
-    border-radius: 10px; height: 20px; text-align: center;
-    font-weight: 600; color: #ffffff;
+    background-color: #ffffff; border: 3px solid #000000;
+    border-radius: 0px; height: 22px; text-align: center;
+    font-weight: 900; color: #000000;
 }
-QProgressBar::chunk { border-radius: 9px; background-color: #4f8cff; }
-QFrame#Sep { background-color: #232c42; max-height: 1px; border: none; }
-QScrollArea { background-color: #0f1420; border: none; }
+QProgressBar::chunk { background-color: #ff006e; border-radius: 0px; }
+QFrame#Sep { background-color: #000000; max-height: 2px; border: none; }
+QScrollArea { background-color: #ffffff; border: none; }
 QScrollArea > QWidget > QWidget { background-color: transparent; }
-QScrollBar:vertical { background: #10182a; width: 10px; margin: 0; }
-QScrollBar::handle:vertical { background: #2a3550; border-radius: 5px; min-height: 30px; }
-QScrollBar::handle:vertical:hover { background: #3d4c72; }
+QScrollBar:vertical { background: #ffffff; width: 14px; margin: 0; border: 2px solid #000000; }
+QScrollBar::handle:vertical { background: #000000; min-height: 30px; border-radius: 0px; }
+QScrollBar::handle:vertical:hover { background: #ff006e; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QMenu { background-color: #ffffff; border: 3px solid #000000; }
+QMenu::item { padding: 6px 24px; color: #000000; }
+QMenu::item:selected { background-color: #ffff00; color: #000000; }
 """
 
 
@@ -171,6 +199,7 @@ class MainWindow(QMainWindow):
         self.badge = QLabel("未开始")
         self.badge.setProperty("badge", True)
         head.addWidget(self.badge, 0, Qt.AlignTop)
+        self._apply_hard_shadow(self.badge, 4)
         page.addLayout(head)
 
         # --- 参数设置区 ---
@@ -227,6 +256,10 @@ class MainWindow(QMainWindow):
         btn_row.addStretch(1)
         form.addRow("", btn_row)
         page.addWidget(g1)
+        self._apply_hard_shadow(g1, 8)
+        self._apply_hard_shadow(self.key_box, 4)
+        self._apply_hard_shadow(self.count_spin, 4)
+        self._apply_hard_shadow(self.rate_spin, 4)
 
         # --- 任务控制区 ---
         g2 = QGroupBox("任务控制")
@@ -259,9 +292,14 @@ class MainWindow(QMainWindow):
         ctrl.setColumnStretch(2, 1)
         hotkey_tip = QLabel("全局快捷键（软件不在前台也有效）：Ctrl+Alt+F8 暂停/继续　·　Ctrl+Alt+F9 停止")
         hotkey_tip.setWordWrap(True)
-        hotkey_tip.setStyleSheet("color:#7c869c;")
+        hotkey_tip.setStyleSheet("color:#444444;")
         ctrl.addWidget(hotkey_tip, 2, 0, 1, 3)   # 第 2 行：避免与第 1 行按钮重叠
         page.addWidget(g2)
+        self._apply_hard_shadow(g2, 8)
+        for b in (self.btn_start, self.btn_pause, self.btn_resume,
+                  self.btn_stop, self.btn_test):
+            self._apply_hard_shadow(b, 6)
+            b.installEventFilter(self)   # hover 阴影增大 / 按下压平
 
         # --- 实时统计区 ---
         g3 = QGroupBox("实时统计")
@@ -294,6 +332,7 @@ class MainWindow(QMainWindow):
         self.val_rate = self._stat_cell(grid, 2, 1, "设定频率")
         stat.addLayout(grid)
         page.addWidget(g3, 1)   # 统计区占据剩余空间
+        self._apply_hard_shadow(g3, 8)
 
         # --- 底部提示 ---
         sep = QFrame(objectName="Sep")
@@ -301,13 +340,13 @@ class MainWindow(QMainWindow):
         page.addWidget(sep)
         self.msg_label = QLabel("就绪。设置参数后点击「开始任务」。")
         self.msg_label.setWordWrap(True)
-        self.msg_label.setStyleSheet("color:#7c869c;")
+        self.msg_label.setStyleSheet("color:#444444;")
         page.addWidget(self.msg_label)
         note = QLabel("统计数字为本程序实际调用系统按键接口的发送次数，"
                       "不一定等于目标应用实际接收的次数。本工具不绕过任何反作弊或安全限制，"
                       "请自行确认目标软件允许模拟按键。")
         note.setWordWrap(True)
-        note.setStyleSheet("color:#5b6478; font-size:12px;")
+        note.setStyleSheet("color:#444444; font-size:12px;")
         page.addWidget(note)
 
     @staticmethod
@@ -316,7 +355,7 @@ class MainWindow(QMainWindow):
         cell = QHBoxLayout()
         cell.setSpacing(8)
         cap = QLabel(caption)
-        cap.setStyleSheet("color:#7c869c; font-size:12px;")
+        cap.setStyleSheet("color:#444444; font-size:12px;")
         val = QLabel("—", objectName="StatValue")
         cell.addWidget(cap, 0, Qt.AlignVCenter)
         cell.addWidget(val, 0, Qt.AlignVCenter)
@@ -324,6 +363,32 @@ class MainWindow(QMainWindow):
         grid.addLayout(cell, row, col * 2, 1, 2)
         grid.setColumnStretch(col * 2, 1)
         return val
+
+    # ---------------- Neo-Brutalist 硬边阴影 ----------------
+
+    def _apply_hard_shadow(self, widget, offset=6):
+        """硬边缘阴影（无模糊）：QSS 不支持 box-shadow，用 blur=0 的阴影特效模拟。"""
+        eff = QGraphicsDropShadowEffect(widget)
+        eff.setBlurRadius(0)
+        eff.setOffset(offset, offset)
+        eff.setColor(QColor("#000000"))
+        widget.setGraphicsEffect(eff)
+
+    def eventFilter(self, obj, event):
+        # Physical Crushing：hover 阴影增大；按下完全压平（阴影消失 + QSS 位移）
+        if isinstance(obj, QPushButton):
+            eff = obj.graphicsEffect()
+            if eff is not None:
+                t = event.type()
+                if t == QEvent.Enter and obj.isEnabled():
+                    eff.setOffset(9, 9)
+                elif t == QEvent.Leave:
+                    eff.setOffset(6, 6)
+                elif t == QEvent.MouseButtonPress:
+                    eff.setEnabled(False)
+                elif t == QEvent.MouseButtonRelease:
+                    eff.setEnabled(True)
+        return super().eventFilter(obj, event)
 
     # ---------------- 配置 ----------------
 
@@ -411,7 +476,7 @@ class MainWindow(QMainWindow):
         self.badge.setStyleSheet('QLabel[badge="true"] '
                                  '{ background-color: %s; }' % STATE_COLORS[state])
         self.val_state.setText(state_text)
-        self.val_state.setStyleSheet("color:%s;" % STATE_COLORS[state])
+        self.val_state.setStyleSheet("color:%s;" % STATE_TEXT[state])
 
         # 计数与进度
         sent, target = snap["sent"], snap["target"]
@@ -454,18 +519,18 @@ class MainWindow(QMainWindow):
         # 消息栏
         if state == TaskState.ERROR:
             self.msg_label.setText("运行异常：" + snap["last_error"])
-            self.msg_label.setStyleSheet("color:#f87171;")
+            self.msg_label.setStyleSheet("color:#c4004f;")
         elif state == TaskState.COMPLETED:
             self.msg_label.setText("任务完成，共发送 %s 次。" % fmt_int(sent))
-            self.msg_label.setStyleSheet("color:#38bdf8;")
+            self.msg_label.setStyleSheet("color:#00779e;")
         elif paused:
             self.msg_label.setText("任务已暂停，点击「继续任务」或按 Ctrl+Alt+F8 恢复。")
-            self.msg_label.setStyleSheet("color:#fbbf24;")
+            self.msg_label.setStyleSheet("color:#a05000;")
         elif running:
             mode = "测试" if snap["is_test"] else "任务"
             self.msg_label.setText("%s运行中：正在以约 %d 次/秒发送「%s」。"
                                    % (mode, snap["rate"], snap["key"]))
-            self.msg_label.setStyleSheet("color:#4ade80;")
+            self.msg_label.setStyleSheet("color:#006600;")
 
     # ---------------- 退出清理 ----------------
 
